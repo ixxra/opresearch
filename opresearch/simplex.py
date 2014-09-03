@@ -1,50 +1,82 @@
 # -*- coding: utf-8 -*-
-class NoLeavingVarException(Exception):
-    pass
-
-
-class NoMatrixPackage(Exception):
-    pass
-
-
-def projection_y(x, y):
-    return y
-
+from .exceptions import NoEnteringVar, NoMatrixPackage, UnknownProblemType
     
-def find_leaving_row(matrix):
-    first_row = enumerate (matrix[0,:-1])
-    idx, val = min(first_row, key=lambda (x, y) : y)
+
+def find_entering_col(matrix, type='max'):
+    '''
+    If the problem is of maximization type, finds the column with the most 
+    negative value in the first row, else, finds the column with the most 
+    positive value. Raises NoLeavingVar if it can't find a suitable column.
     
-    if val >= 0:
-        raise NoLeavingVarException
+    parameters:
+
+    matrix - Two dimensional matrix.
+    type   - either 'max' or 'min'.
+    '''
+    if type not in ('max', 'min'):
+        raise UnknownProblemType
+    
+    obj_row = matrix[0, :-1]
+    try:
+        if type == 'max':
+            idx = obj_row.argmin()
+        else:
+            idx = obj_row.argmax()
+        val = obj_row[idx]
+    except AttributeError:
+        if type == 'max':
+            idx, val = min(enumerate(obj_row), key=lambda (x, y) : y)
+        else:
+            idx, val = max(enumerate(obj_row), key=lambda (x, y) : y)
+    
+    if type == 'max' and val >= 0 or type == 'min' and val <= 0:
+        raise NoEnteringVar
     
     return idx
 
     
-def find_entering_col(matrix, leaving_row):
-    m = enumerate(matrix[1:,[leaving_row, -1]].tolist())
-    thetas = [(idx, y / x) for idx, (x, y) in m if y / x >= 0]
-    idx, val = min(thetas, key=lambda (idx, ratio) : ratio)
+def find_leaving_row(matrix, entering_col):
+    m = enumerate(matrix[1:,(entering_col, -1)].tolist())
+    thetas = [(idx, y / x) for idx, (x, y) in m if  x != 0 and y / x >= 0]
+    idx, _ = min(thetas, key=lambda (idx, ratio) : ratio)
+
     return idx + 1
 
     
 def move_pivot(matrix, i, j):
     pivot = matrix[i, j]
-    for r in range(matrix.rows):
+    try:
+        nrows = matrix.rows
+    except:
+        nrows = len(matrix)
+    for r in range(nrows):
         if r == i: 
             continue
             
         mul = -matrix[r, j] / pivot
-        
-        matrix.zip_row_op(r, i, lambda v, u: v + mul * u)
+        matrix[r,:] += mul * matrix[i,:]
         
     matrix[i, :] = matrix[i, :] / pivot
 
 
-def do_step(matrix):
-    row = find_leaving_row(matrix)
-    col = find_entering_col(matrix, row)
+def do_step(matrix, type='max'):
+    '''
+    Performs a simplex step:
+        1. Finds an entering var (column)
+        2. Finds a leaving var (row)
+        3. Perform the necessary gaussian elimination steps.
+
+    Arguments:
+        matrix - The matrix representing the simplex problem.
+        type   - Either 'max' or 'min'.
+    '''
+    if type not in ('max', 'min'):
+        raise UnknownProblemType
+
+    col = find_entering_col(matrix, type)
+    row = find_leaving_row(matrix, col)
     move_pivot(matrix, row, col)
+    
     return row, col
 
 
@@ -168,11 +200,12 @@ class Problem:
         return m
 
 
+    @classmethod
     def from_file(cls, fname):
         from parser import parse
         return cls(parse(open(fname)))
 
-    from_file = classmethod(from_file)
+    #from_file = classmethod(from_file)
 
     def __repr__(self):
         _obj = []
